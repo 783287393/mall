@@ -156,3 +156,121 @@ The storefront is configured via environment variables in `apps/storefront/.env.
 
 - [Medusa Documentation](https://docs.medusajs.com)
 - [Medusa Cloud](https://cloud.medusajs.com)
+
+---
+
+# Lab 02 — 开源在线商城系统二次开发（扩展说明）
+
+> 本实验在固定 Commit `19e8a6f`（Medusa v2.20.1 DTC Starter）之上二次开发，
+> 完成「浏览 → 购物车 → 结算 → 下单」全链路，并自主实现**收藏夹（Wishlist）**功能。
+> 所有二次开发提交位于分支 `feature/store-extension`（基线之上 5+ commits）。
+
+## 一、运行环境（本机）
+
+| 组件 | 版本/端口 | 说明 |
+|---|---|---|
+| Node.js / pnpm | pnpm 10.11.1 | Monorepo 包管理 |
+| PostgreSQL | 16.9 / 5432 | 服务 `postgresql-x64-16`，库 `medusa-backend` |
+| Redis | 6379 | 便携 Redis（`D:\oss-mall\redis`） |
+| Medusa 后端 | 9000 | `pnpm dev`（apps/backend） |
+| Next.js 店面 | 8000 | `pnpm dev`（apps/storefront） |
+
+数据库连接：`postgres://medusa:medusa2026@localhost:5432/medusa-backend`
+
+## 二、账号
+
+| 角色 | 邮箱 | 密码 |
+|---|---|---|
+| 管理员（管理端 `/app`） | admin@medusa-lab.test | Lab2026admin |
+| 店面演示顾客 | wishlist@medusa-lab.test | Wishlist2026 |
+
+## 三、商品数据（10 个商品）
+
+- Starter 自带 4 个：`t-shirt` / `sweatshirt` / `sweatpants` / `shorts`
+- 实验种子 6 个（`apps/backend/src/scripts/seed-lab-products.ts`，幂等）：
+  `medusa-coffee-mug`、`medusa-winter-beanie`、`medusa-hoodie-limited`、
+  `medusa-socks-3pack`、`medusa-backpack-premium`、`medusa-water-bottle`
+- 边界库存：零库存（BEANIE-BLACK=0、SOCKS-3PACK=0）、单件（HOODIE-LTD-M=1）、
+  多规格（水瓶 750ML=40 / 1L=25）等
+
+## 四、自主功能：收藏夹 Wishlist
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| 模块 | `apps/backend/src/modules/wishlist/` | `wishlist_item` 表 + MedusaService CRUD |
+| API | `apps/backend/src/api/store/wishlist/` | GET/POST `/store/wishlist`、DELETE `/store/wishlist/:product_id`，顾客鉴权、幂等 |
+| 店面 | `apps/storefront/src/lib/data/wishlist.ts` | Server Actions（get/add/remove，缓存 tag `wishlist`） |
+| UI | `apps/storefront/src/modules/wishlist/components/wishlist-button.tsx` | 商品详情页心形收藏按钮（乐观更新） |
+| 页面 | `apps/storefront/src/app/[countryCode]/(main)/wishlist/page.tsx` | 收藏列表（价格/缩略图/移除）、空态、未登录跳转 |
+
+## 五、集成测试（27/27 通过）
+
+```bash
+cd apps/backend
+$env:TEST_TYPE='integration:http'
+$env:NODE_OPTIONS='--experimental-vm-modules'
+pnpm exec jest --silent=false --runInBand --forceExit
+```
+
+- `http/wishlist.spec.ts`（10）— 鉴权/空列表/加购/幂等/400/删除/DB 持久化
+- `http/storefront-flow.spec.ts`（9）— 浏览/搜索/详情价/购物车/加行/下单/订单持久化/库存预留
+- `http/inventory-boundary.spec.ts`（8）— 零库存/单件/超量/草稿商品下架/重复下单幂等
+
+共享种子 `src/integration-tests/http/utils.ts`：测试库重建初始数据 + 实验商品，
+并统一渠道链接，保证店面 API 可见全部商品（双 store 启动特性）。
+
+## 六、演示地址
+
+- 店面首页 http://localhost:8000/dk
+- 商品列表 http://localhost:8000/dk/store
+- 收藏夹 http://localhost:8000/dk/wishlist（登录后）
+- 管理端 http://localhost:9000/app
+
+## 七、系统架构（Mermaid）
+
+```mermaid
+flowchart LR
+    U[顾客] -->|浏览/搜索/详情| S[Next.js 店面 :8000]
+    U -->|加购/结算/下单| S
+    U -->|收藏/取消收藏| S
+    S -->|Store API x-publishable-api-key + Bearer| A[Medusa Store API :9000]
+    A --> P[商品/变体/价格/库存模块]
+    A --> C[购物车/支付/订单工作流]
+    A --> W[自主模块 wishlist]
+    P --> DB[(PostgreSQL medusa-backend)]
+    C --> DB
+    W --> DB
+    C -->|库存预留| P
+    M[管理端 /app] --> A
+```
+
+## 八、环境版本检查与一键启停
+
+```powershell
+node -v            # v20.19+ / 22.12+ / 24 LTS
+pnpm -v            # 10.11.1（与锁文件一致）
+psql --version     # PostgreSQL 16.x（服务 postgresql-x64-16）
+```
+
+一键脚本（本机路径 `D:\oss-mall\scripts\`）：
+
+| 脚本 | 作用 |
+|---|---|
+| `start-all.bat` | 检查/启动 PostgreSQL 服务与 Redis，然后依次启动后端（9000）与店面（8000），日志写入 `D:\oss-mall\logs\` |
+| `stop-all.bat` | 结束店面与后端进程，保留数据库与 Redis 数据（可选停止 Redis） |
+| `reset-db.bat` | 重置 `medusa-backend` 库并重跑迁移 + 种子（重建演示数据） |
+
+## 九、演示截图
+
+见 `_agent_output/ppt-*.png`（商品列表、详情页心形、收藏页、购物车、管理端订单），
+已用于课堂 PPT。
+
+## 十、提交记录（feature/store-extension）
+
+```
+c38eacc test(backend): integration suites for wishlist, storeflow, inventory
+2e2da2b feat(storefront): wishlist UI end to end
+20a4da6 feat(backend): wishlist module and store API
+c799fda feat(backend): seed 6 lab products with boundary inventory
+2be0937 chore(root): allow pnpm postinstall for native deps
+```

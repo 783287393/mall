@@ -11,6 +11,8 @@ import { notFound } from "next/navigation"
 import { HttpTypes } from "@medusajs/types"
 
 import ProductActionsWrapper from "./product-actions-wrapper"
+import WishlistButton from "@modules/wishlist/components/wishlist-button"
+import { getWishlist } from "@lib/data/wishlist"
 
 type ProductTemplateProps = {
   product: HttpTypes.StoreProduct
@@ -19,7 +21,7 @@ type ProductTemplateProps = {
   images: HttpTypes.StoreProductImage[]
 }
 
-const ProductTemplate: React.FC<ProductTemplateProps> = ({
+const ProductTemplate: React.FC<ProductTemplateProps> = async ({
   product,
   region,
   countryCode,
@@ -28,6 +30,9 @@ const ProductTemplate: React.FC<ProductTemplateProps> = ({
   if (!product || !product.id) {
     return notFound()
   }
+
+  const wishlist = await getWishlist()
+  const isSaved = wishlist.some((item) => item.product_id === product.id)
 
   return (
     <>
@@ -55,6 +60,11 @@ const ProductTemplate: React.FC<ProductTemplateProps> = ({
           >
             <ProductActionsWrapper id={product.id} region={region} />
           </Suspense>
+          <WishlistButton
+            productId={product.id}
+            initialSaved={isSaved}
+            countryCode={countryCode}
+          />
         </div>
       </div>
       <div
